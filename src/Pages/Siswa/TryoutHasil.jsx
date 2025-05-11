@@ -13,38 +13,108 @@ export default function SiswaTryoutHasil() {
   const [error, setError] = useState(null)
   const navigate = useNavigate()
   const { id } = useParams()
+  const [subjectList, setSubjectList] = useState([])
+  const [timeoutError, setTimeoutError] = useState(false)
+
+  useEffect(() => {
+    const fetchSubjects = async () => {
+      try {
+        const res = await axiosInstance.get(`/API/student/tryout/${id}`)
+        // Ambil array subjek dari getTryout.subjects dan filter unik berdasarkan subject_id
+        let subjects = []
+        if (res.data.getTryout && Array.isArray(res.data.getTryout.subjects)) {
+          const seen = new Set()
+          subjects = res.data.getTryout.subjects.filter(sub => {
+            if (seen.has(sub.subject_id)) return false
+            seen.add(sub.subject_id)
+            return true
+          })
+        }
+        setSubjectList(subjects)
+        if (subjects.length === 0) {
+          setTimeoutError(true)
+        }
+      } catch (err) {
+        setSubjectList([])
+        setTimeoutError(true)
+      }
+    }
+    fetchSubjects()
+  }, [id])
+
+  // Timeout loading jika lebih dari 5 detik
+  useEffect(() => {
+    if (!timeoutError && loading) {
+      const timer = setTimeout(() => {
+        setTimeoutError(true)
+        setLoading(false)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [loading, timeoutError])
 
   useEffect(() => {
     const fetchTryoutResults = async () => {
       try {
         const response = await axiosInstance.get(`/API/student/tryout/${id}/result`)
-        // Map response to expected structure
         const raw = response.data
         const summary = Array.isArray(raw.summary) ? raw.summary[0] : raw.summary
-        const perCategorySubject = Array.isArray(raw.perCategorySubject)
-          ? raw.perCategorySubject.map(item => {
-              const result = item.result || {}
-              const subjek = result.subjek || {}
-              return {
-                category_name: result.nama_kategori || '-',
-                subject_name: subjek.nama_subjek || '-',
-                average_score: subjek.nilai_rata_rata || 0,
-                total_correct: subjek.total_jawaban_benar || 0,
-                total_wrong: subjek.total_jawaban_salah || 0,
-                total_empty: subjek.total_jawaban_kosong || 0,
+        let perCategorySubject = []
+        if (Array.isArray(raw.perCategorySubject)) {
+          raw.perCategorySubject.forEach(item => {
+            const result = typeof item.result === 'string' ? JSON.parse(item.result) : (item.result || {})
+            const subjekArr = Array.isArray(result.subjek) ? result.subjek : (result.subjek ? [result.subjek] : [])
+            subjekArr.forEach(sub => {
+              // Cari id_subject dari subjectList dengan pencocokan case-insensitive dan trim
+              const subjectData = subjectList.find(s => {
+                if (!s.subject_name || !sub.nama_subjek) return false;
+                const a = s.subject_name.trim().toLowerCase();
+                const b = sub.nama_subjek.trim().toLowerCase();
+                return a === b;
+              });
+              if (!subjectData) {
+                console.warn('ID subject tidak ditemukan untuk:', sub.nama_subjek)
               }
+              perCategorySubject.push({
+                category_name: result.nama_kategori || '-',
+                subject_name: sub.nama_subjek || '-',
+                subject_id: subjectData ? subjectData.subject_id : null,
+                average_score: sub.nilai_rata_rata || 0,
+                total_correct: sub.total_jawaban_benar || 0,
+                total_wrong: sub.total_jawaban_salah || 0,
+                total_empty: sub.total_jawaban_kosong || 0,
+              })
             })
-          : []
+          })
+        }
         setTryoutResults({ summary, perCategorySubject })
         setLoading(false)
+        setTimeoutError(false)
       } catch (err) {
         setError(err.response?.data?.message || 'Failed to fetch tryout results')
         setLoading(false)
+        setTimeoutError(true)
       }
     }
-
     fetchTryoutResults()
-  }, [id])
+  }, [id, subjectList])
+
+  if (timeoutError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-500 text-center">
+          <p className="text-xl font-semibold mb-2">Error</p>
+          <p>Timeout: Data tidak berhasil dimuat. Silakan refresh halaman atau hubungi admin.</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-4 bg-[#1E3A5F] text-white px-4 py-2 rounded-lg"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // Animation variants
   const containerVariants = {
@@ -202,8 +272,19 @@ export default function SiswaTryoutHasil() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 + categoryIndex * 0.1, duration: 0.5 }}
-            className="bg-gradient-to-br from-[#1E3A5F] to-[#2E4A7F] text-white p-6 rounded-xl shadow-lg"
+            className="bg-gradient-to-br from-[#1E3A5F] to-[#2E4A7F] text-white p-6 rounded-xl shadow-lg cursor-pointer"
             style={{ boxShadow: "0 10px 25px -5px rgba(30, 58, 95, 0.4)" }}
+            onClick={() => {
+              if (category.subject_id) {
+                navigate(`/siswa/tryout/${id}/${category.subject_id}/pembahasan`, { replace: true })
+              } else {
+                alert('Pembahasan untuk subject ini belum tersedia (ID tidak ditemukan).')
+              }
+            }}
+            whileHover={{
+              scale: 1.02,
+              transition: { type: "spring", stiffness: 300 },
+            }}
           >
             <motion.h2
               initial={{ opacity: 0 }}
@@ -212,6 +293,7 @@ export default function SiswaTryoutHasil() {
               className="text-center text-xl font-semibold mb-4 flex items-center justify-center"
             >
               {category.category_name}
+              <span className="ml-2 text-sm text-blue-200">({category.subject_name})</span>
             </motion.h2>
 
             <motion.div

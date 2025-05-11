@@ -34,9 +34,24 @@ export default function SiswaTryoutPembahasan() {
         }
 
         setExamData({
-          studentData: response.data.studentData || {},
-          subjectExpData: response.data.subjectExpData || {},
-          detail: Array.isArray(response.data.detail) ? response.data.detail : []
+          studentData: {
+            student_name: response.data.studentData?.nama || '',
+            student_id: response.data.studentData?.nisn || ''
+          },
+          subjectExpData: {
+            subject_name: response.data.subjectExpData?.subjek || '',
+            subject_category_name: response.data.subjectExpData?.kategori_subjek || ''
+          },
+          detail: Array.isArray(response.data.detail) ? response.data.detail.map(item => ({
+            question_id: item.id_question,
+            question_image: item.image_question,
+            question_text: item.question,
+            answer_options: item.answer_options.map((option, index) => ({
+              option_text: option,
+              is_correct: option === item.correct_answer,
+              is_selected: option === item.jawaban_siswa
+            }))
+          })) : []
         })
 
         setLoading(false)
